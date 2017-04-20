@@ -84,7 +84,7 @@
 #'      (see above) are written into GRASS location.
 #'
 #' @note Prepare GRASS location and necessary raster files in advance and start
-#'      GRASS session in R using \code{\link[spgrass6]{initGRASS}}.
+#'      GRASS session in R using \code{\link[rgrass7]{initGRASS}}.
 #' 
 #'      Make sure that the GRASS functions \emph{r.stream.distance} and \emph{r.stream.order}
 #'      are available to your GRASS installation. If not, consider \emph{g.extension} to
@@ -92,7 +92,7 @@
 #'      the path to add-ons is not recognised. In such a case locate the local installation
 #'      path (in a GRASS terminal use, e.g., \code{which r.stream.distance}) and specify the
 #'      absolute path to add-ons via argument \code{addon_path}. For more information, see also
-#'      \url{http://grasswiki.osgeo.org/wiki/AddOns/GRASS_6}.
+#'      \url{https://grasswiki.osgeo.org/wiki/AddOns/GRASS_7}.
 #'      
 #'      See GRASS documentation for further information on GRASS functions and
 #'      parameters.
@@ -188,219 +188,216 @@ lump_grass_prep <- function(
       addon_path <- paste0(addon_path, "/")
     
     
-  # CLEAN UP AND RUNTIME OPTIONS #  
-  # suppress annoying GRASS outputs
-  tmp_file <- file(tempfile(), open="wt")
-  sink(tmp_file, type="output")
-  
-  # also supress warnings in silent mode
-  if(silent){
-    tmp_file2 <- file(tempfile(), open="wt")
-    sink(tmp_file2, type="message")
-    oldw <- getOption("warn")
-    options(warn = -1)
-  }
-  
-  
-  
-  
-  
-  
-  ### CALCULATIONS ###
-  tryCatch({
-    message("\nSTART hydrological preprocessing for lumpR using GRASS...\n")
+    # CLEAN UP AND RUNTIME OPTIONS #  
+    # suppress annoying GRASS outputs
+    tmp_file <- file(tempfile(), open="wt")
+    sink(tmp_file, type="output")
     
-    # create output directory
-    dir.create(dir_out, recursive=T, showWarnings=F)
-    
-    # check output directory
-    if (!overwrite & file.exists(paste(dir_out,svc_ofile,sep="/"))) 
-      stop(paste0("In output directory '", dir_out, "' the file '", svc_ofile, "' already exists!"))
-    
-    
-    # remove mask if any
-    suppressWarnings(execGRASS("r.mask", flags=c("r")))
-    
-    # remove output of previous function calls if overwrite=T
-    if (overwrite) {
-      execGRASS("g.mremove", rast=paste("*_t,*_t1,*_t2", eha, flowdir, flowacc, stream, stream_horton, elevriv, distriv, mask_corr, svc, sep=","), flags=c("f", "b"))
-    } else {
-      # remove temporary maps in any case
-      execGRASS("g.mremove", rast="*_t,*_t1,*_t2", flags=c("f", "b"))
+    # also supress warnings in silent mode
+    if(silent){
+      tmp_file2 <- file(tempfile(), open="wt")
+      sink(tmp_file2, type="message")
+      oldw <- getOption("warn")
+      options(warn = -1)
     }
     
     
-    
-    # EHA #
-    message("\nCalculate and process EHAs...\n")
-    
-    # check of lcov or soil contains labels and create temporary map without labels if necessary
-    lens <- sapply(unlist(execGRASS("r.category", map=soil, fs=",", intern=T)), function(x) length(unlist(strsplit(x,","))))
-    if(any(lens>1)) {
-      execGRASS("r.mapcalculator", amap=soil, outfile=paste0(unlist(strsplit(soil, "@"))[1], "_t"), formula="A*1")
-      soil <- paste0(unlist(strsplit(soil, "@"))[1], "_t")
-    }
-    lens <- sapply(unlist(execGRASS("r.category", map=lcov, fs=",", intern=T)), function(x) length(unlist(strsplit(x,","))))
-    if(any(lens>1)) {
-      execGRASS("r.mapcalculator", amap=lcov, outfile=paste0(unlist(strsplit(lcov, "@"))[1], "_t"), formula="A*1")
-      lcov <- paste0(unlist(strsplit(lcov, "@"))[1], "_t")
-    }
-    
-    # calculate EHA etc.
-    execGRASS("r.watershed", elevation=dem, threshold=eha_thres, half.basin="eha_t1", stream=stream,
-              accumulation="flow_accum_t", drainage=flowdir)
+    ### CALCULATIONS ###
+    tryCatch({
+      message("\nSTART hydrological preprocessing for lumpR using GRASS...\n")
+      
+      # create output directory
+      dir.create(dir_out, recursive=T, showWarnings=F)
+      
+      # check output directory
+      if (!overwrite & file.exists(paste(dir_out,svc_ofile,sep="/"))) 
+        stop(paste0("In output directory '", dir_out, "' the file '", svc_ofile, "' already exists!"))
+      
+      
+      # remove mask if any
+      suppressWarnings(execGRASS("r.mask", flags=c("r")))
+      
+      # remove output of previous function calls if overwrite=T
+      if (overwrite) {
+        execGRASS("g.remove", type="raster", name=paste("*_t,*_t1,*_t2", eha, flowdir, flowacc, stream, stream_horton, elevriv, distriv, mask_corr, svc, sep=","), flags=c("f", "b"))
+      } else {
+        # remove temporary maps in any case
+        execGRASS("g.remove", type="raster", name="*_t,*_t1,*_t2", flags=c("f", "b"))
+      }
+      
+      
+      
+      # EHA #
+      message("\nCalculate and process EHAs...\n")
+      
+      # check of lcov or soil contains labels and create temporary map without labels if necessary
+      lens <- sapply(unlist(execGRASS("r.category", map=soil, separator="comma", intern=T)), function(x) length(unlist(strsplit(x,","))))
+      if(any(lens>1)) {
+        #execGRASS("r.mapcalculator", amap=soil, outfile=paste0(unlist(strsplit(soil, "@"))[1], "_t"), formula="A*1")
+        execGRASS("r.mapcalc", expression=paste0(unlist(strsplit(soil, "@"))[1], "_t = ",soil,"*1"))
+        soil <- paste0(unlist(strsplit(soil, "@"))[1], "_t")
+      }
+      lens <- sapply(unlist(execGRASS("r.category", map=lcov, separator="comma", intern=T)), function(x) length(unlist(strsplit(x,","))))
+      if(any(lens>1)) {
+        #execGRASS("r.mapcalculator", amap=lcov, outfile=paste0(unlist(strsplit(lcov, "@"))[1], "_t"), formula="A*1")
+        execGRASS("r.mapcalc", expression= paste0(unlist(strsplit(lcov, "@"))[1], "_t = ",lcov,"*1"))
+        lcov <- paste0(unlist(strsplit(lcov, "@"))[1], "_t")
+      }
+      
+      # calculate EHA etc.
+      execGRASS("r.watershed", elevation=dem, threshold=eha_thres, half_basin="eha_t1", stream=stream,
+                accumulation="flow_accum_t", drainage=flowdir)
+      
+      #border cells that receive inflow from outside get negative values, which propagate through entire basin. Check is this is a real problem or just an artefact!
+      #execGRASS("r.mapcalculator", amap="flow_accum_t", outfile=flowacc, formula="abs(flow_accum_t)")
+      execGRAss("r.mapcalc", expression= paste0(flowacc, "= abs(flow_accum_t)"))
+      
+      # set mask and region
+      execGRASS("r.mask", raster=mask, flags=c("o"))  
+      
+      #remove fragments
+      execGRASS("r.reclass.area", input="eha_t1", output="eha_t2", value=sizefilter, mode=greater)
+      
+      # grow subbasin map to fill gaps resulted from remove of fragments
+      grow_eval <- NULL
+      execGRASS("r.grow", input="eha_t2", output=eha, radius=growrad)
+      
+      # evaluate growing
+      #execGRASS("r.mapcalculator", amap=mask, bmap=eha, outfile="grow_eval_t", formula="A * isnull(B)", flags=c("overwrite"))
+      execGRASS("r.mapcalc", expression= paste0("grow_eval_t = ",mask," * isnull(",eha,")"), flags=c("overwrite"))
+      
+      grow_eval2 <- execGRASS("r.stats", input="grow_eval_t", flags=c("n"), intern=TRUE)
+      if (grepl(pattern="[0-9]+.*[\b]+",x=tail(grow_eval2, n=1)))
+        grow_eval2 = grow_eval2[-length(grow_eval2)] #last line contains progress indicator, remove
+      
+      grow_eval2 <- as.numeric(grow_eval2)
+      
+      grow_eval <- c(grow_eval, grow_eval2)
+      
+      if (any(grow_eval==1)) {
+        stop("There are still gaps in the subbasin and/or EHA raster maps after growing. Try to increase growrad and run again.")
+      }
+      
+      
+      
+      
+      # RIVER calculations #
+      message("\nCalculate river network and morphological parameters...\n")
+      
+      # calculate Horton stream order (works only for non-thinned stream segments!)
+      execGRASS("g.region", raster=flowdir) # complains about defiation in resolution of flowdir although it is the same as for the region?!
+      execGRASS(paste0(addon_path, "r.stream.order"), stream_rast=stream, direction=flowdir, horton=stream_horton)
+      
+      # calculate distance to river and relative elevation for each cell
+      execGRASS(paste0(addon_path, "r.stream.distance"), stream_rast=stream, direction=flowdir, elevation=dem, method="downstream", 
+                distance="dist_riv_t", difference=elevriv)
+      
+      # get resolution (mean between x and y resolution)
+      RES <- execGRASS("r.info", map=dem, flags=c("g"), intern=TRUE)
+      RES <- sum(as.numeric(gsub("*[res]=", "", RES))) / 2 # unbedingt ausprobieren!
 
-    #border cells that receive inflow from outside get negative values, which propagate through entire basin. Check is this is a real problem or just an artefact!
-    execGRASS("r.mapcalculator", amap="flow_accum_t", outfile=flowacc, formula="abs(flow_accum_t)")
-    
-    # set mask and region
-    execGRASS("r.mask", input=mask, flags=c("o"))  
-    
-    #remove fragments
-    execGRASS("r.reclass.area", input="eha_t1", greater=sizefilter, output="eha_t2")
-    
-    # grow subbasin map to fill gaps resulted from remove of fragments
-    grow_eval <- NULL
-    execGRASS("r.grow", input="eha_t2", output=eha, radius=growrad)
-    
-    # evaluate growing
-    execGRASS("r.mapcalculator", amap=mask, bmap=eha, outfile="grow_eval_t", formula="A * isnull(B)", flags=c("overwrite"))
-    
-    grow_eval2 <- execGRASS("r.stats", input="grow_eval_t", flags=c("n"), intern=TRUE)
-    if (grepl(pattern="[0-9]+.*[\b]+",x=tail(grow_eval2, n=1)))
-      grow_eval2 = grow_eval2[-length(grow_eval2)] #last line contains progress indicator, remove
-    
-    grow_eval2 <- as.numeric(grow_eval2)
-    
-    grow_eval <- c(grow_eval, grow_eval2)
-    
-    if (any(grow_eval==1)) {
-      stop("There are still gaps in the subbasin and/or EHA raster maps after growing. Try to increase growrad and run again.")
-    }
+      # convert units: metric to number of cells (expected by following scripts)
+      #execGRASS("r.mapcalculator", amap="dist_riv_t", outfile=distriv, formula=paste("A/",RES,sep=""))
+      execGRASS("r.mapcalc", expression= paste0( distriv, "= dist_riv_t/",RES,sep=""))
+      
+      # define new mask (it doesn't work to specify output of r.stream.distance as mask; don't know why)
+      #execGRASS("r.mapcalculator", amap=elevriv, outfile=mask_corr, formula="if(isnull(A),null(),1)")
+      execGRASS("r.mapcalc", expression= paste0(mask_corr, "= if(isnull(",elevriv,"),null(),1)"))
+      # set new mask as area is slightly smaller afer r.stream.distance
+      execGRASS("r.mask", raster=mask_corr, flags=c("overwrite"))
+      
+RES <-       nsres=10
+      ewres=10
+      
+      
+      # SOIL VEGETATION COMPONENTS #
+      message("\nCalculate soil vegetation components...\n")
+      
+      # create soil vegetation components from soil and landcover/vegetation data
+      if (!is.null(watermask) & !is.null(imperviousmask)) {
+        execGRASS("r.cross", input=paste(soil,lcov,watermask,imperviousmask,sep=","), output=svc)
+      } else if (!is.null(watermask) & is.null(imperviousmask)) {
+        execGRASS("r.cross", input=paste(soil,lcov,watermask,sep=","), output=svc)
+      } else if (is.null(watermask) & !is.null(imperviousmask)) {
+        execGRASS("r.cross", input=paste(soil,lcov,imperviousmask,sep=","), output=svc) 
+      } else {
+        execGRASS("r.cross", input=paste(soil,lcov,sep=","), output=svc)
+      }
+      
+      # categories of SVCs
+      svc_cats <- execGRASS("r.category", map=svc, separator="comma", intern=T)
+      
+      # transformations ...
+      svc_cats_grp <- grep("^0", svc_cats, invert=T, value=T)
+      svc_cats_sub <- gsub(",|;", "", svc_cats_grp)
+      svc_cats_spl <- strsplit(svc_cats_sub, "category|Category")
+      
+      if (!is.null(watermask) & !is.null(imperviousmask)) {
+        svc_cats_mat_t <- matrix(as.integer(unlist(svc_cats_spl)),ncol=5, byrow=T)
+        colnames(svc_cats_mat_t) <- c("pid", "soil_id", "veg_id", "water", "impervious") # same order as input of "r.cross"!
+        svc_cats_mat <- svc_cats_mat_t[,-5]
+        colnames(svc_cats_mat)[4] <- "special_area"
+        rows_water <- which(svc_cats_mat_t[,"water"] == 1)
+        rows_impervious <- which(svc_cats_mat_t[,"impervious"] == 1)
+        svc_cats_mat[rows_water,"special_area"] <- 1
+        svc_cats_mat[rows_impervious,"special_area"] <- 2
+      } else if (!is.null(watermask) & is.null(imperviousmask)) {
+        svc_cats_mat <- matrix(as.integer(unlist(svc_cats_spl)),ncol=4, byrow=T)
+        colnames(svc_cats_mat) <- c("pid", "soil_id", "veg_id", "special_area") # same order as input of "r.cross"!
+      } else if (is.null(watermask) & !is.null(imperviousmask)) {
+        svc_cats_mat <- matrix(as.integer(unlist(svc_cats_spl)),ncol=4, byrow=T)
+        colnames(svc_cats_mat) <- c("pid", "soil_id", "veg_id", "special_area") # same order as input of "r.cross"!
+        svc_cats_mat[which(svc_cats_mat[,"special_area"] == 1),"special_area"] <- 2
+      } else {
+        svc_cats_mat <- matrix(as.integer(unlist(svc_cats_spl)),ncol=3, byrow=T)
+        colnames(svc_cats_mat) <- c("pid", "soil_id", "veg_id") # same order as input of "r.cross"!
+        svc_cats_mat <- cbind(svc_cats_mat, rep(0,nrow(svc_cats_mat)))
+        colnames(svc_cats_mat)[4] <- "special_area"
+      }
+      
+      # header of svc output file
+      svc_out <- matrix(NA, ncol=13, nrow=nrow(svc_cats_mat))
+      svc_out_head <- c("pid", "description", "soil_id", "veg_id", "musle_k", "musle_c1","musle_c2","musle_c3","musle_c4","musle_p","coarse_frac","manning_n","special_area")
+      colnames(svc_out) <- svc_out_head
+      
+      # merge data with output mat
+      svc_out[,colnames(svc_cats_mat)] <- svc_cats_mat
+      
+      # write output
+      write.table(svc_out, paste(dir_out, svc_ofile, sep="/"), quote=F, sep="\t", row.names=F)
+      
+      # remove temp files
+      if(keep_temp == FALSE)
+        execGRASS("g.remove", type= "raster", name="*_t,*_t1,*_t2", flags=c("f", "b"))
+      
+      message("\nDONE!\n")
+      
+      
+      # stop sinking
+      closeAllConnections()
+      
+      # restore original warning mode
+      if(silent)
+        options(warn = oldw)
+      
 
-        
+      
+      # if an error occurs delete all temporary output
+    }, error = function(e) {
+      
+      # stop sinking
+      closeAllConnections()
+      
+      # restore original warning mode
+      if(silent)
+        options(warn = oldw)
+      
+      execGRASS("r.mask", flags=c("r"))
+      
+      if(keep_temp == FALSE)
+        execGRASS("g.remove", type="raster", name=paste("*_t,*_t1,*_t2", eha, flowdir, flowacc, stream, stream_horton, elevriv, distriv, mask_corr, svc, sep=","), flags=c("f", "b"))
+      
+      stop(paste(e))  
+    })
     
-    
-    # RIVER calculations #
-    message("\nCalculate river network and morphological parameters...\n")
-    
-    # calculate Horton stream order (works only for non-thinned stream segments!)
-    execGRASS("g.region", rast=flowdir) # complains about defiation in resolution of flowdir although it is the same as for the region?!
-    execGRASS(paste0(addon_path, "r.stream.order"), stream=stream, dir=flowdir, horton=stream_horton)
-    
-    # calculate distance to river and relative elevation for each cell
-    execGRASS(paste0(addon_path, "r.stream.distance"), stream=stream, dir=flowdir, dem=dem, method="downstream", 
-              distance="dist_riv_t", elevation=elevriv)
-    
-    # get resolution (mean between x and y resolution)
-    RES <- execGRASS("r.info", map=dem, flags=c("s"), intern=TRUE)
-    RES <- sum(as.numeric(gsub("[a-z]*=", "", RES))) / 2
-    
-    # convert units: metric to number of cells (expected by following scripts)
-    execGRASS("r.mapcalculator", amap="dist_riv_t", outfile=distriv, formula=paste("A/",RES,sep=""))
-    
-    # define new mask (it doesn't work to specify output of r.stream.distance as mask; don't know why)
-    execGRASS("r.mapcalculator", amap=elevriv, outfile=mask_corr, formula="if(isnull(A),null(),1)")
-    # set new mask as area is slightly smaller afer r.stream.distance
-    execGRASS("r.mask", input=mask_corr, flags=c("o"))
-    
-
-    
-    
-    # SOIL VEGETATION COMPONENTS #
-    message("\nCalculate soil vegetation components...\n")
-    
-    # create soil vegetation components from soil and landcover/vegetation data
-    if (!is.null(watermask) & !is.null(imperviousmask)) {
-      execGRASS("r.cross", input=paste(soil,lcov,watermask,imperviousmask,sep=","), output=svc)
-    } else if (!is.null(watermask) & is.null(imperviousmask)) {
-      execGRASS("r.cross", input=paste(soil,lcov,watermask,sep=","), output=svc)
-    } else if (is.null(watermask) & !is.null(imperviousmask)) {
-      execGRASS("r.cross", input=paste(soil,lcov,imperviousmask,sep=","), output=svc) 
-    } else {
-      execGRASS("r.cross", input=paste(soil,lcov,sep=","), output=svc)
-    }
-    
-    # categories of SVCs
-    svc_cats <- execGRASS("r.category", map=svc, fs=",", intern=T)
-
-    # transformations ...
-    svc_cats_grp <- grep("^0", svc_cats, invert=T, value=T)
-    svc_cats_sub <- gsub(",|;", "", svc_cats_grp)
-    svc_cats_spl <- strsplit(svc_cats_sub, "category|Category")
-
-    if (!is.null(watermask) & !is.null(imperviousmask)) {
-      svc_cats_mat_t <- matrix(as.integer(unlist(svc_cats_spl)),ncol=5, byrow=T)
-      colnames(svc_cats_mat_t) <- c("pid", "soil_id", "veg_id", "water", "impervious") # same order as input of "r.cross"!
-      svc_cats_mat <- svc_cats_mat_t[,-5]
-      colnames(svc_cats_mat)[4] <- "special_area"
-      rows_water <- which(svc_cats_mat_t[,"water"] == 1)
-      rows_impervious <- which(svc_cats_mat_t[,"impervious"] == 1)
-      svc_cats_mat[rows_water,"special_area"] <- 1
-      svc_cats_mat[rows_impervious,"special_area"] <- 2
-    } else if (!is.null(watermask) & is.null(imperviousmask)) {
-      svc_cats_mat <- matrix(as.integer(unlist(svc_cats_spl)),ncol=4, byrow=T)
-      colnames(svc_cats_mat) <- c("pid", "soil_id", "veg_id", "special_area") # same order as input of "r.cross"!
-    } else if (is.null(watermask) & !is.null(imperviousmask)) {
-      svc_cats_mat <- matrix(as.integer(unlist(svc_cats_spl)),ncol=4, byrow=T)
-      colnames(svc_cats_mat) <- c("pid", "soil_id", "veg_id", "special_area") # same order as input of "r.cross"!
-      svc_cats_mat[which(svc_cats_mat[,"special_area"] == 1),"special_area"] <- 2
-    } else {
-      svc_cats_mat <- matrix(as.integer(unlist(svc_cats_spl)),ncol=3, byrow=T)
-      colnames(svc_cats_mat) <- c("pid", "soil_id", "veg_id") # same order as input of "r.cross"!
-      svc_cats_mat <- cbind(svc_cats_mat, rep(0,nrow(svc_cats_mat)))
-      colnames(svc_cats_mat)[4] <- "special_area"
-    }
-
-    # header of svc output file
-    svc_out <- matrix(NA, ncol=13, nrow=nrow(svc_cats_mat))
-    svc_out_head <- c("pid", "description", "soil_id", "veg_id", "musle_k", "musle_c1","musle_c2","musle_c3","musle_c4","musle_p","coarse_frac","manning_n","special_area")
-    colnames(svc_out) <- svc_out_head
-    
-    # merge data with output mat
-    svc_out[,colnames(svc_cats_mat)] <- svc_cats_mat
-
-    # write output
-    write.table(svc_out, paste(dir_out, svc_ofile, sep="/"), quote=F, sep="\t", row.names=F)
-
-
-
-
-    # remove temp files
-    if(keep_temp == FALSE)
-      execGRASS("g.mremove", rast="*_t,*_t1,*_t2", flags=c("f", "b"))
-    
-    message("\nDONE!\n")
-    
-    
-    # stop sinking
-    closeAllConnections()
-    
-    # restore original warning mode
-    if(silent)
-      options(warn = oldw)
-    
-    
-    
-    
-    
-    
-    # if an error occurs delete all temporary output
-  }, error = function(e) {
-    
-    # stop sinking
-    closeAllConnections()
-    
-    # restore original warning mode
-    if(silent)
-      options(warn = oldw)
-    
-    execGRASS("r.mask", flags=c("r"))
-    
-    if(keep_temp == FALSE)
-      execGRASS("g.mremove", rast=paste("*_t,*_t1,*_t2", eha, flowdir, flowacc, stream, stream_horton, elevriv, distriv, mask_corr, svc, sep=","), flags=c("f", "b"))
-    
-    stop(paste(e))  
-  })
-  
 } # EOF
