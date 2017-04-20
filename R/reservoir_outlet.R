@@ -39,7 +39,7 @@
 #'      polygon and vector file \code{outlets_vect} exported to GRASS location.
 #'      
 #' @note Prepare GRASS location and necessary files in advance and start GRASS
-#'      session in R using \code{\link[spgrass6]{initGRASS}}. Location should not
+#'      session in R using \code{\link[rgrass7]{initGRASS}}. Location should not
 #'      contain any maps ending on *_t as these will be removed by calling the
 #'      function to remove temporary maps.
 #'      
@@ -76,9 +76,9 @@ reservoir_outlet <- function(
     
     
     # load reservoirs from GRASS
-    res_polygon <- readVECT6(res_vct)
+    res_polygon <- readVECT(res_vct)
     # load accumulation values from GRASS
-    accum_rast <- raster(readRAST6(flowacc))
+    accum_rast <- raster(readRAST(flowacc))
     
     
     # identify reservoir outlets #
@@ -112,17 +112,17 @@ reservoir_outlet <- function(
     writeVECT6(coords_out, outlets_vect)
     
     # remove temporary maps
-    execGRASS("g.mremove", rast="*_t", flags=c("f"))
+    execGRASS("g.remove", type= "raster", name="*_t", flags=c("f"))
     
     
     # return spatial object
     return(coords_out)
     
-  
-  # exception handling
+    
+    # exception handling
   }, error = function(e) {
-    execGRASS("g.mremove", rast=paste0("*_t,"), flags=c("f"))
+    execGRASS("g.remove", type= "raster", name=paste0("*_t,"), flags=c("f"))
     stop(paste(e))  
   })
-    
+  
 } # EOF
