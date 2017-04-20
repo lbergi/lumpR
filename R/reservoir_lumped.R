@@ -48,7 +48,7 @@
 #'      of internally used GRASS functions)? Default: \code{FALSE}.
 #' 
 #' @note Prepare GRASS location and necessary spatial objects in advance and start
-#'      GRASS session in R using \code{\link[spgrass6]{initGRASS}}.
+#'      GRASS session in R using \code{\link[rgrass7]{initGRASS}}.
 #'      
 #' @details This function creates the mandatory WASA input files needed to run the model
 #'      with option \code{doacudes}.
@@ -141,7 +141,7 @@ reservoir_lumped <- function(
   silent=F
 ) {
   
-### PREPROCESSING ###
+  ### PREPROCESSING ###
   
   # CHECKS #
   
@@ -174,7 +174,7 @@ reservoir_lumped <- function(
     stop("'res_param' needs column 'damd_hrr' to be given!")
   
   # check that reservoir vector file has column 'volume' or 'area'
-  cmd_out <- execGRASS("v.info", map=res_vect, flags=c("c"), intern=T)
+  cmd_out <- execGRASS("v.info", map=res_vect, flags=c("c"), intern=T, ignore.stderr = T)
   cmd_out <- unlist(strsplit(cmd_out, "|", fixed=T))
   cols <- grep("area|volume", cmd_out, value=T)
   if(length(cols) == 0)
@@ -183,7 +183,7 @@ reservoir_lumped <- function(
   # calculate vol_max for 'res_param' if not available
   if(is.null(res_param$vol_max))
     res_param$vol_max <- (res_param$area_max / (res_param$alpha_Molle * res_param$damk_Molle))^( res_param$alpha_Molle / (res_param$alpha_Molle - 1) ) * res_param$damk_Molle
-
+  
   
   # CLEAN UP AND RUNTIME OPTIONS # 
   # suppress annoying GRASS outputs
@@ -200,7 +200,7 @@ reservoir_lumped <- function(
   
   
   
-### CALCULATIONS ###
+  ### CALCULATIONS ###
   tryCatch({
     
     
@@ -220,13 +220,15 @@ reservoir_lumped <- function(
     
     # remove output of previous function calls if overwrite=T
     if (overwrite) {
-      execGRASS("g.mremove", rast=paste0("*_t"), vect=paste0("*_t,", res_vect_class), flags=c("f", "b"))
-    } else {
+      execGRASS("g.remove", type="raster", name=paste0("*_t"),flags=c("f", "b"))
+      execGRASS("g.remove", type="vector", name=paste0("*_t,", res_vect_class), flags=c("f", "b"))
+       } else {
       # remove temporary maps in any case
-      execGRASS("g.mremove", rast="*_t", vect="*_t", flags=c("f", "b"))
+      execGRASS("g.remove", type= "raster", name="*_t", flags=c("f", "b"))
+      execGRASS("g.remove", type= "vector", name="*_t", flags=c("f", "b"))
     }
     
-      
+    
     
     # GROUP RESERVOIRS INTO SIZE CLASSES #
     message("\nGroup reservoirs into size classes...\n")
@@ -234,47 +236,48 @@ reservoir_lumped <- function(
     if(any(grepl("volume", cols))) { # volume information is available
       
       # convert vector to raster data for processing
-      execGRASS("v.to.rast", input=res_vect, output="reservoirs_lump_vol_t", column="volume")
+      execGRASS("v.to.rast", input=res_vect, output="reservoirs_lump_vol_t", attribute_column="volume")
       
-      # loop over reservoir size classes to create formula string for r.mapcalculator
+      # loop over reservoir size classes to create formula string for r.mapcalc
       res_param_t <- rbind(0, res_param)
       res_param_order <- order(res_param_t$vol_max)
       expr <- NULL
       for(s in 1:nrow(res_param)) {
-        expr_t <- paste0("if( A > ", sprintf(res_param_t$vol_max[res_param_order[s]], fmt="%f"), " && A < ", sprintf(res_param_t$vol_max[res_param_order[s+1]], fmt="%f"), ", ", res_param_t$class[res_param_order[s+1]], ", ")
+        expr_t <- paste0("if( reservoirs_lump_vol_t > ", sprintf(res_param_t$vol_max[res_param_order[s]], fmt="%f"), " && reservoirs_lump_vol_t < ", sprintf(res_param_t$vol_max[res_param_order[s+1]], fmt="%f"), ", ", res_param_t$class[res_param_order[s+1]], ", ")
         expr <- paste0(expr, expr_t)
       }
       expr <- paste0(expr, "0", paste0(rep(")", nrow(res_param)), collapse = ""))
       
       # apply classification
-      execGRASS("r.mapcalculator", amap="reservoirs_lump_vol_t", outfile="reservoirs_classes_t", formula=expr)
+ #     execGRASS("r.mapcalculator", amap="reservoirs_lump_vol_t", outfile="reservoirs_classes_t", formula=expr)
+      execGRASS("r.mapcalc", expression = paste0("reservoirs_classes_t = ",expr,""))
       
     } else { # only area information is available
       
       # convert vector to raster data for processing
-      execGRASS("v.to.rast", input=res_vect, output="reservoirs_lump_area_t", column="area")
+      execGRASS("v.to.rast", input=res_vect, output="reservoirs_lump_area_t", attribute_column="area")
       
       # calculate maximum areas from volume in res_param
       res_param_area <- res_param$alpha_Molle * res_param$damk_Molle * (res_param$vol_max / res_param$damk_Molle)^( (res_param$alpha_Molle - 1) / res_param$alpha_Molle )
       
-      # loop over reservoir size classes to create formula string for r.mapcalculator
+      # loop over reservoir size classes to create formula string for r.mapcalc
       res_param_t <- cbind(res_param, area=res_param_area)
       res_param_t <- rbind(0, res_param_t)
       res_param_order <- order(res_param_t$area)
       expr <- NULL
       for(s in 1:nrow(res_param)) {
-        expr_t <- paste0("if( A > ", sprintf(res_param_t$area[res_param_order[s]], fmt="%f"), " && A < ", sprintf(res_param_t$area[res_param_order[s+1]], fmt="%f"), ", ", res_param_t$class[res_param_order[s+1]], ", ")
+        expr_t <- paste0("if( reservoirs_lump_area_t > ", sprintf(res_param_t$area[res_param_order[s]], fmt="%f"), " && reservoirs_lump_area_t < ", sprintf(res_param_t$area[res_param_order[s+1]], fmt="%f"), ", ", res_param_t$class[res_param_order[s+1]], ", ")
         expr <- paste0(expr, expr_t)
       }
       expr <- paste0(expr, "0", paste0(rep(")", nrow(res_param)), collapse = ""))
       
       # apply classification
-      execGRASS("r.mapcalculator", amap="reservoirs_lump_area_t", outfile="reservoirs_classes_t", formula=expr)
-      
+      #execGRASS("r.mapcalculator", amap="reservoirs_lump_area_t", outfile="reservoirs_classes_t", formula=expr)
+      execGRASS("r.mapcalc", expression= paste0("reservoirs_classes_t = ", expr))
     }
     
     # check result for reservoir being larger than given maximum and give warning if necessary
-    cmd_out <- execGRASS("r.stats", input="reservoirs_classes_t", fs=",", flags=c("n", "c"), intern=T)
+    cmd_out <- execGRASS("r.stats", input="reservoirs_classes_t", separator= "comma", flags=c("n", "c"), intern=T, ignore.stderr = T)
     cmd_out <- matrix(as.numeric(unlist(strsplit(cmd_out, ","))), ncol=2, byrow = T)
     if(any(cmd_out[,1] == 0))
       warning(paste0("There are ", cmd_out[which(cmd_out[,1]==0),2], " reservoirs larger than largest given reservoir class which will be ignored!\n",
@@ -283,7 +286,7 @@ reservoir_lumped <- function(
     # output vector file (classified reservoirs)
     execGRASS("r.null", map="reservoirs_classes_t", setnull="0")
     if(!is.null(res_vect_class))
-      execGRASS("r.to.vect", input="reservoirs_classes_t", output=res_vect_class, feature="point")
+      execGRASS("r.to.vect", input="reservoirs_classes_t", output=res_vect_class, type="point")
     
     
     
@@ -300,7 +303,7 @@ reservoir_lumped <- function(
     
     # lake_number.dat from classified reservoirs
     # loop over subbasins
-    subbas <- as.numeric(execGRASS("r.stats", input=sub_rast, fs=",", flags=c("n"), intern=T))
+    subbas <- as.numeric(execGRASS("r.stats", input=sub_rast, separator= "comma", flags=c("n"), intern=T, ignore.stderr = T))
     lake_num_out <- matrix(0, nrow=length(subbas), ncol=nrow(res_param)+1)
     for(s in 1:length(subbas)) {
       
@@ -308,11 +311,12 @@ reservoir_lumped <- function(
       x <- suppressWarnings(execGRASS("r.mask", flags=c("r"), intern=T))
       
       # subbasin mask
-      x <- execGRASS("r.mapcalculator", amap=sub_rast, outfile="sub_mask_t", formula=paste0("if(A==", subbas[s], ", 1, null())"), flags = c("overwrite"), intern=T)
-      x <- suppressWarnings(execGRASS("r.mask", input="sub_mask_t", flags=c("o"), intern=T))
+      #x <- execGRASS("r.mapcalculator", amap=sub_rast, outfile="sub_mask_t", formula=paste0("if(A==", subbas[s], ", 1, null())"), flags = c("overwrite"), intern=T)
+      x <- execGRASS("r.mapcalc", expression=paste0("sub_mask_t = if (",sub_rast,"==", subbas[s], ", 1, null())"),flags = c("overwrite"), intern=T)
+      x <- suppressWarnings(execGRASS("r.mask", raster="sub_mask_t", flags=c("overwrite"), intern=T))
       
       # statistics of classified reservoirs in mask region
-      cmd_out <- execGRASS("r.stats", input="reservoirs_classes_t", fs=",", flags=c("n", "c"), intern=T)
+      cmd_out <- execGRASS("r.stats", input="reservoirs_classes_t", separator= "comma", flags=c("n", "c"), intern=T, ignore.stderr = T)
       res_stats <- matrix(as.numeric(unlist(strsplit(cmd_out, ","))), ncol=2, byrow = T)
       
       # output data object
@@ -332,7 +336,7 @@ reservoir_lumped <- function(
     
     # remove temporary maps
     if(keep_temp == FALSE)
-      execGRASS("g.mremove", rast="*_t", flags=c("f"))
+      execGRASS("g.remove", type= "raster", name="*_t", flags=c("f"))
     
     
     
@@ -363,9 +367,10 @@ reservoir_lumped <- function(
     execGRASS("r.mask", flags=c("r"))
     
     if(keep_temp == FALSE)
-        execGRASS("g.mremove", rast=paste0("*_t"), vect=paste0(res_vect_class), flags=c("f", "b"))
+      execGRASS("g.remove", type= "raster", name = paste0("*_t"), flags=c("f", "b"))
+      execGRASS("g.remove", type= "vector", name = paste0(res_vect_class),flags=c("f", "b"))
     
     stop(paste(e))  
   })
-    
+  
 } # EOF
