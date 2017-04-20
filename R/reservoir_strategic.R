@@ -143,7 +143,7 @@ reservoir_strategic <- function(
   silent=F
 ) {
   
-### PREPROCESSING ###
+  ### PREPROCESSING ###
   
   # CHECKS #
   # spatial input from GRASS location
@@ -168,7 +168,7 @@ reservoir_strategic <- function(
   
   
   
-### CALCULATIONS ###
+  ### CALCULATIONS ###
   tryCatch({
     
     message("\nInitialise function...\n")
@@ -184,7 +184,7 @@ reservoir_strategic <- function(
       stop(paste0("Output file ", reservoir_file, " already exists in ", dir_out, "!"))
     
     # get reservoir data
-    res <- readVECT6(res_vect)
+    res <- readVECT(res_vect)
     
     # make sure column names are in in lowercase only
     colnames(res@data) <- tolower(colnames(res@data))
@@ -198,13 +198,13 @@ reservoir_strategic <- function(
       stop(paste0("Check attribute table of 'res_vect', column(s) ", paste(cols_mandatory[!chk_cols], collapse=", "), " could not be found!"))
     
     # get subbasin values
-    sub_rast <- raster(readRAST6(subbasin))
+    sub_rast <- raster(readRAST(subbasin))
     
     
-
+    
     
     message("\nAssignment of reservoirs to subbasins...\n")
-
+    
     # get subbasin no for each outlet point
     res_sub_all <- extract(sub_rast, res, df=T)
     names(res_sub_all)[2] <- "sub_id_new"
@@ -225,25 +225,25 @@ reservoir_strategic <- function(
     message("\nPrepare and write output...\n")
     # sort data for writing output
     res_dat_sort <- data.frame(res_dat_all$sub_id_new,
-                      res_dat_all$minlevel,
-                      res_dat_all$maxlevel,
-                      res_dat_all$vol0,
-                      res_dat_all$storecap,
-                      res_dat_all$damflow,
-                      res_dat_all$damq_frac,
-                      res_dat_all$withdrawal,
-                      res_dat_all$damyear,
-                      res_dat_all$maxdamarea,
-                      res_dat_all$damdead,
-                      res_dat_all$damalert,
-                      res_dat_all$dama,
-                      res_dat_all$damb,
-                      res_dat_all$q_outlet,
-                      res_dat_all$fvol_botm,
-                      res_dat_all$fvol_over,
-                      res_dat_all$damc,
-                      res_dat_all$damd,
-                      res_dat_all$elevbottom)
+                               res_dat_all$minlevel,
+                               res_dat_all$maxlevel,
+                               res_dat_all$vol0,
+                               res_dat_all$storecap,
+                               res_dat_all$damflow,
+                               res_dat_all$damq_frac,
+                               res_dat_all$withdrawal,
+                               res_dat_all$damyear,
+                               res_dat_all$maxdamarea,
+                               res_dat_all$damdead,
+                               res_dat_all$damalert,
+                               res_dat_all$dama,
+                               res_dat_all$damb,
+                               res_dat_all$q_outlet,
+                               res_dat_all$fvol_botm,
+                               res_dat_all$fvol_over,
+                               res_dat_all$damc,
+                               res_dat_all$damd,
+                               res_dat_all$elevbottom)
     
     # prepare output file
     header_str <- "Subasin-ID, minlevel[m], maxlevel[m], vol0([1000m**3]; unknown=-999), storcap[1000m**3], damflow[m**3/s], damq_frac[-], withdrawal[m**3/s], damyear[YYYY], maxdamarea[ha], damdead[1000m**3], damalert[1000m**3], dama[-], damb[-], qoutlet[m**3/s], fvol_bottom[-], fvol_over[-], damc[-], damd[-], elevbottom[m]"
@@ -286,5 +286,5 @@ reservoir_strategic <- function(
     
     stop(paste(e))  
   })
-    
+  
 } # EOF
