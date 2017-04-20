@@ -279,7 +279,7 @@ lump_grass_post <- function(
     options(warn = -1)
   }
   
-
+  
   
   
   
@@ -302,19 +302,19 @@ lump_grass_post <- function(
     
     # remove output of previous function calls if overwrite=T
     if (overwrite) {
-      execGRASS("g.mremove", rast=paste("*_t,", lu, sep=","), flags=c("f", "b"))
+      execGRASS("g.remove", type="raster",name=paste("*_t,", lu, sep=","), flags=c("f", "b"))
     } else {
       # remove temporary maps in any case
-      execGRASS("g.mremove", rast="*_t", flags=c("f", "b"))
+      execGRASS("g.remove", type="raster",name="*_t", flags=c("f", "b"))
     }
     
     # set basin-wide mask
-    execGRASS("r.mask", input=mask, flags=c("o"))
+    execGRASS("r.mask", raster="mask", flags=c("overwrite"))
     
     # load rasters into R
-    accum_rast <- raster(readRAST6(flowacc))
-    dir_rast <- raster(readRAST6(flowdir))
-    sub_rast <- raster(readRAST6(subbasin))
+    accum_rast <- raster(readRAST(flowacc))
+    dir_rast <- raster(readRAST(flowdir))
+    sub_rast <- raster(readRAST(subbasin))
     # ... raster values as matrix
     sub_mat <- getValues(sub_rast, format="matrix")
     accum_mat <- getValues(accum_rast, format="matrix")
@@ -340,7 +340,7 @@ lump_grass_post <- function(
   
   # LU RASTER #
   tryCatch({
-      
+    
     if (is.null(recl_lu)) #use existing LU-map
     {
       message(paste0("\nUse existing raster map '", lu, "'\n"))
@@ -354,12 +354,12 @@ lump_grass_post <- function(
       
       # growing radius (parameter for r.grow)
       GROWRAD <- 20
-        
+      
       while (TRUE)
       {        
         # look for empty patches
-        x=execGRASS("r.mapcalculator", amap=mask, bmap=lu, outfile="grow_eval_t", formula="A * isnull(B)", flags="overwrite", intern=TRUE)
-        
+        #x=execGRASS("r.mapcalculator", amap=mask, bmap=lu, outfile="grow_eval_t", formula="A * isnull(B)", flags="overwrite", intern=TRUE)
+        x= execGRASS("r.mapcalc", expression= paste0("grow_eval_t = ",mask," * isnull(",lu,")"), flags="overwrite", intern=TRUE)
         na_eval <- execGRASS("r.stats", input="grow_eval_t", flags=c("n","p"), intern=TRUE) ##windows version
         if (grepl(pattern="[0-9]+.*[\b]+",x=tail(na_eval, n=1)))
           na_eval = na_eval[-length(na_eval)] #last line contains progress indicator, remove
@@ -367,7 +367,7 @@ lump_grass_post <- function(
         if (length(na_res)>1)
           message(paste0(na_res[[2]][2], " NAs in ", lu))
         
-    
+        
         if (length(na_res)==1 | !fill_holes) 
         {  
           x=execGRASS("g.remove", rast="grow_eval_t", intern=TRUE)
@@ -406,8 +406,8 @@ lump_grass_post <- function(
   }
   )
   
-    
-    
+  
+  
   # SUBBASIN STATISTICS #
   tryCatch({
     if(!is.null(sub_ofile)) {
@@ -422,7 +422,7 @@ lump_grass_post <- function(
       
       #sub_stats[,"area"] <- sub_stats[,"areal_fraction"]/100 #convert % to fraction
       sub_stats[,"area"] <- sub_stats[,"area"]/1e6 #convert m? to km?
-        
+      
       # calculate stats of LUs in each subbasin and subbasin drainage ("drains_to")
       sub_stats <- cbind(sub_stats, na_val, na_val, na_val, na_val, na_val, na_val, na_val)
       colnames(sub_stats)[c(3:9)] <- c("x", "y", "drains_to", "lag_time", "retention", "description", "a_stream_order")
@@ -436,7 +436,7 @@ lump_grass_post <- function(
         # current row in output object
         s_row <- which(sub_stats[,"pid"] == SUB)
         
-    # COORDINATES OF SUBBASIN centroids in GRASS units #
+        # COORDINATES OF SUBBASIN centroids in GRASS units #
         sub_centr <- execGRASS("r.volume", data=subbasin, flags=c("f"), intern=TRUE)
         
         sub_centr <- data.frame(x=as.numeric(strsplit(sub_centr, ":")[[1]][5]), y=as.numeric(strsplit(sub_centr, ":")[[1]][6]))
@@ -446,29 +446,29 @@ lump_grass_post <- function(
         sub_stats[s_row, "x"] <- coordinates(sub_centr)[,"x"]
         sub_stats[s_row, "y"] <- coordinates(sub_centr)[,"y"]
         
-    # SUBBASIN drainage #
+        # SUBBASIN drainage #
         sub_stats[s_row,"drains_to"] <- sub_route(SUB,sub_mat,accum_mat,dir_mat) # internal function, see below
-    
-    # SUBBASIN PARAMETERS #
+        
+        # SUBBASIN PARAMETERS #
         # calc main channel length
         chan_len <- channel_length(SUB,stream_horton, flowdir, flowacc)
         
         # calc main channel average slope
         chan_slope <- channel_slope("stream_main_t", flowacc, dem, chan_len)
-    
+        
         # calc main channel width
         chan_width <- channel_width(flowacc)
-    
+        
         # calc main channel depth
         chan_depth <- channel_depth(flowacc)
-    
+        
         # calc flow velocites for bankful, 2/3 and 1/10 filling
         # Manning's n = 0.075 (very weedy reaches, deep pools, or floodways with heavy stand of timber and underbrush) 
         # http://www.fsl.orst.edu/geowater/FX3/help/8_Hydraulic_Reference/Mannings_n_Tables.htm
         chan_velo_full <- flow_velocity(chan_width, chan_depth, chan_slope, n=0.075)
         chan_velo_med <- flow_velocity(chan_width, 2/3 * chan_depth, chan_slope, n=0.075)
         chan_velo_low <- flow_velocity(chan_width, 1/10 * chan_depth, chan_slope, n=0.075)
-    
+        
         # calc travel times (translation and retention) [d]
         # approach according to Bronstert et al. (1999), Guentner (2002)
         flowtime_min <- chan_len / chan_velo_full / 86400
@@ -480,23 +480,23 @@ lump_grass_post <- function(
         
         if(!is.finite(flowtime_med) || !is.finite(retention))
           warning(paste0("Could not calculate finite subbasin parameters for subbasin ", SUB))
-    
+        
         # save
         sub_stats[s_row, "lag_time"] <- flowtime_med
         sub_stats[s_row, "retention"] <- retention
-    
+        
         write.table(sub_stats, paste(dir_out, sub_ofile, sep="/"), quote=F, row.names=F, sep="\t")
         
         # set basin-wide mask again
         execGRASS("r.mask", input=mask, flags=c("o"))
-    
+        
         # remove temp rasters (even if keep_temp because these maps are created during every iteration of this loop)
         execGRASS("g.mremove", rast="cell_len_t,stream_main_t,flowacc_minmax_t,MASK_t", flags=c("f", "b"), ignore.stderr=T)
       }
       
     } # sub_ofile given?
-  
-  
+    
+    
   }, error = function(e) {
     
     # stop sinking
@@ -515,9 +515,9 @@ lump_grass_post <- function(
     
     stop(paste(e))
   })
-
-
-
+  
+  
+  
   # LANDSCAPE UNIT STATISTICS #
   tryCatch({
     if(!is.null(lu_ofile)) {
@@ -525,7 +525,7 @@ lump_grass_post <- function(
       
       sub_lu_stats_t <- execGRASS("r.stats", input=paste0(subbasin,",",lu), flags=c("n", "c"), intern=TRUE) ##windows version
       if (grepl(pattern="[0-9]+.*[\b]+",x=tail(sub_lu_stats_t, n=1))) #check if last line contains progress indicator, remove
-      sub_lu_stats_t = sub_lu_stats_t[-length(sub_lu_stats_t)] 
+        sub_lu_stats_t = sub_lu_stats_t[-length(sub_lu_stats_t)] 
       
       sub_lu_stats_t = sub_lu_stats_t[grepl(x=sub_lu_stats_t, pattern = "^[0-9]")]  #remove non-number lines
       sub_lu_stats_t = as.numeric(gsub("%", "", unlist(strsplit(sub_lu_stats_t, split=" +")))) #convert to numbers and remove %
@@ -556,16 +556,16 @@ lump_grass_post <- function(
     
     stop(paste(e))
   })
-
-
-
-
-    
+  
+  
+  
+  
+  
   # LANDSCAPE UNIT PARAMETERS #
   tryCatch({
     if(!is.null(lupar_ofile)) {
       message("\nCalculate LU parameters...\n")
-       
+      
       # identify LUs
       lu_ids <- execGRASS("r.stats", input=lu, flags=c("n"), intern=TRUE)
       if (grepl(pattern="[0-9]+.*[\b]+",x=tail(lu_ids, n=1)))
@@ -579,25 +579,25 @@ lump_grass_post <- function(
       
       # calculate mean soil depth for every LU
       if (!is.null(soil_depth) && soil_depth!="")
-        {
-          cmd_out <- execGRASS("r.univar", zones=lu, map=soil_depth, fs=",", flags=c("t"),intern=T)
-          if (grepl(pattern="[0-9]+.*[\b]+",x=tail(cmd_out, n=1)))
-            cmd_out <- cmd_out[-length(cmd_out)] #last line contains progress indicator, remove
-          cmd_out <- strsplit(cmd_out, ",")
-          cmd_out <- matrix(unlist(cmd_out[-1]), ncol=length(cmd_out[[1]]), byrow=T,
-                            dimnames=list(NULL, cmd_out[[1]]))
-          lu_depth <- as.numeric(cmd_out[,"mean"])
-          lu_ids = as.numeric(cmd_out[,"zone"])
-          # quick check of soil depths
-          if(any(lu_depth > 10000))
-            warning("There are average LU soil depths of more than 10 m which is a large (but not impossible) value. Check your input data and units ('soil_depth' in [mm])!")
-          if(any(lu_depth < 100))
-            warning("There are average LU soil depths of less than 10 cm which is a small (but not impossible) value. Check your input data and units ('soil_depth' in [mm])!")
-        } else lu_depth=na_val
+      {
+        cmd_out <- execGRASS("r.univar", zones=lu, map=soil_depth, fs=",", flags=c("t"),intern=T)
+        if (grepl(pattern="[0-9]+.*[\b]+",x=tail(cmd_out, n=1)))
+          cmd_out <- cmd_out[-length(cmd_out)] #last line contains progress indicator, remove
+        cmd_out <- strsplit(cmd_out, ",")
+        cmd_out <- matrix(unlist(cmd_out[-1]), ncol=length(cmd_out[[1]]), byrow=T,
+                          dimnames=list(NULL, cmd_out[[1]]))
+        lu_depth <- as.numeric(cmd_out[,"mean"])
+        lu_ids = as.numeric(cmd_out[,"zone"])
+        # quick check of soil depths
+        if(any(lu_depth > 10000))
+          warning("There are average LU soil depths of more than 10 m which is a large (but not impossible) value. Check your input data and units ('soil_depth' in [mm])!")
+        if(any(lu_depth < 100))
+          warning("There are average LU soil depths of less than 10 cm which is a small (but not impossible) value. Check your input data and units ('soil_depth' in [mm])!")
+      } else lu_depth=na_val
       
       lu_par[,"pid"] <- lu_ids
       lu_par[,"soil_depth"] <- lu_depth
-    
+      
       
       if (!is.null(sdr) && sdr!="")
       {
@@ -613,7 +613,7 @@ lump_grass_post <- function(
         lu_par[,"sdr_lu"] <- sdr_lu
       }
       
-    
+      
       # groundwater parameters (so far only default values)
       # TODO: alternative approaches?
       # groundwater for every LU
@@ -630,13 +630,13 @@ lump_grass_post <- function(
         # storage coefficient for groundwater outflow [days]; TODO: estimate from baseflow analysis?!
         lu_par[,"frgw_delay"] <- rep(na_val, length(lu_depth))
       }
-    
-    
+      
+      
       # write output
       write.table(lu_par, paste(dir_out, lupar_ofile, sep="/"), quote=F, row.names=F, sep="\t")
-    
+      
     } # lupar_ofile fiven?
-
+    
   }, error = function(e) {
     
     # stop sinking
@@ -674,7 +674,7 @@ lump_grass_post <- function(
   if(silent)
     options(warn = oldw)
   
-
+  
 } # EOF
 
 
@@ -697,7 +697,7 @@ sub_route <- function(sub_no,sub_mat,accum_mat,dir_mat) {
   
   # determine row and col no in sub_mat
   sub_rowcol <- arrayInd(sub_ids[accum_sub_max], dim(sub_mat))
-
+  
   # determine value of sub_mat (subbasin no.) of neighbour cell according to dir_sub_out
   if (dir_sub_out < 0) { # outlet of catchment
     return(9999)
@@ -722,7 +722,7 @@ sub_route <- function(sub_no,sub_mat,accum_mat,dir_mat) {
       sub_rowcol_out <- sub_rowcol + c(0,+1)  
     } else {
       stop(paste("During determining subbasin drainage: Determined flow direction at outlet
-              of subbasin ", sub_no, " has value ", dir_sub_out, " but should be one of {1,2,3,4,5,6,7,8} or a negative number.", sep=""))
+                 of subbasin ", sub_no, " has value ", dir_sub_out, " but should be one of {1,2,3,4,5,6,7,8} or a negative number.", sep=""))
     }
     
     # determine subbasin the current subbasin drains to
@@ -737,7 +737,7 @@ sub_route <- function(sub_no,sub_mat,accum_mat,dir_mat) {
       
       return(sub_out)
     }  
-  } 
+    } 
 } # EOF
 
 
@@ -763,7 +763,7 @@ channel_length <- function(sub_no, stream, flowdir, flowacc) {
     execGRASS("r.mapcalculator", amap=flowacc, outfile="stream_main_t", 
               formula=paste0("if(A == ", sprintf(accmax, fmt="%i"), ", 1, null())"))
     warning(paste("Subbasin ", sub_no, " has no main channel. Assume at least one raster cell.", sep=""))
-
+    
   } else {
     
     max_val <- max(main_chan)
@@ -774,9 +774,9 @@ channel_length <- function(sub_no, stream, flowdir, flowacc) {
     # calculate lengths of main stream raster cells
     dia <- sqrt(sum(resol^2))
     expr <- paste0("if(isnull(A), null(),
-                    if(B == 4 || B == 8, ",resol["ewres"],", 0)+
-                    if(B == 2 || B == 6, ",resol["nsres"],", 0)+
-                    if(B == 1 || B == 3 || B == 5 || B == 7, ",dia,", 0))")
+                   if(B == 4 || B == 8, ",resol["ewres"],", 0)+
+                   if(B == 2 || B == 6, ",resol["nsres"],", 0)+
+                   if(B == 1 || B == 3 || B == 5 || B == 7, ",dia,", 0))")
     expr <- gsub("\n|\\s","",expr)
     execGRASS("r.mapcalculator", amap="stream_main_t", bmap=flowdir, outfile="cell_len_t", formula=expr)
     
@@ -801,7 +801,7 @@ channel_slope <- function(stream_main, flowacc, dem, chan_len) {
   
   # get dem values for respective raster cells of min and max flowacc
   expr <- paste("if(A, if(B == ", accum_vals[1], " || B == ", accum_vals[2], ", 1, null())
-               , null())", sep="")
+                , null())", sep="")
   expr <- gsub("\n|\\s","",expr)
   execGRASS("r.mapcalculator", amap=stream_main, bmap=flowacc, outfile="flowacc_minmax_t",
             formula=expr)
@@ -885,4 +885,3 @@ flow_velocity <- function(chan_width, chan_depth, chan_slope, n) {
   
   return(chan_velo)
 }
-
